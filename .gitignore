@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+
+# macOS
+.DS_Store
+*.icns
+assets/
+
+# Build artifacts
+build/
+dist/
+*.spec
+*.egg-info/
+*.egg
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Models (not uploaded to GitHub)
+models/
+*.gguf
+*.safetensors
+*.bin
+
+# Ollama
+Modelfile
+*.modelfile
+
+# Logs
+*.log
