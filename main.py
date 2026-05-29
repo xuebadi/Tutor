@@ -472,12 +472,8 @@ class MainWindow(QMainWindow):
             return
         self.ai_buffer += text
         if self.current_ai_bubble:
-            # 移除思考标签后显示
-            display = self.ai_buffer
-            if "<think>" in display:
-                display = display.split("<think>")[0]
-            if "</think>" in display:
-                display = display.split("</think>")[-1]
+            # 实时显示：只显示 </think> 之后的内容（即正式回答）
+            display = self._strip_think(self.ai_buffer)
             self.current_ai_bubble.update_text(display)
 
     def _on_thinking(self, text):
@@ -488,6 +484,23 @@ class MainWindow(QMainWindow):
             self.current_thinking_bubble.show()
             self.current_thinking_bubble.update_text(text)
         self.scroll_to_bottom()
+
+    def _strip_think(self, text):
+        """移除 <think>...</think> 标签，只返回正式回答"""
+        result = []
+        i = 0
+        while i < len(text):
+            start = text.find("<think>", i)
+            if start == -1:
+                result.append(text[i:])
+                break
+            result.append(text[i:start])
+            end = text.find("</think>", start)
+            if end == -1:
+                # 思考未结束，跳过 <think> 内容
+                break
+            i = end + len("</think>")
+        return "".join(result).strip()
 
     def _on_token(self, count):
         self.status_bar.showMessage(f"🤔 AI 思考中... ({count} tokens)")
@@ -506,12 +519,9 @@ class MainWindow(QMainWindow):
             self.status_bar.showMessage("❌ 推理失败")
         else:
             # 最终显示（移除思考标签）
-            final = self.ai_buffer
-            if "<think>" in final:
-                parts = final.split("<think>")
-                final = parts[0] + "\n".join(p.split("</think>")[-1] if "</think>" in p else "" for p in parts[1:])
-            if "</think>" in final:
-                final = final.split("</think>")[-1]
+            final = self._strip_think(self.ai_buffer)
+            if not final:
+                final = "(模型未返回回答内容，请重试)"
 
             if self.current_ai_bubble:
                 self.current_ai_bubble.update_text(final)
