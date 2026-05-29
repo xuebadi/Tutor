@@ -29,7 +29,7 @@ from PyQt5.QtGui import QFont, QColor, QPalette, QIcon, QTextCursor, QTextCharFo
 
 # ============== 配置 ==============
 OLLAMA_API    = "http://localhost:11434"
-DEFAULT_MODEL = "xueba-di"
+DEFAULT_MODEL = "llama3.2:1b"
 APP_NAME      = "学霸帝 AI"
 APP_VERSION   = "1.1.0"
 
@@ -72,93 +72,50 @@ class OllamaStreamThread(QThread):
                 with urllib.request.urlopen(req, timeout=10) as resp:
                     pass
             except Exception:
-                self.finished_signal.emit(False, f"❌ 模型 '{self.model}' 未找到。请先运行：ollama create xueba-di")
+                self.finished_signal.emit(False, f"❌ 模型 '{self.model}' 未找到。请先运行：ollama pull llama3.2:1b")
                 return
 
+            # 非流式调用，避免状态机 bug
             req = urllib.request.Request(
                 f"{OLLAMA_API}/api/chat",
                 data=json.dumps({
                     "model": self.model,
                     "messages": [{"role": "user", "content": self.prompt}],
-                    "stream": True,
+                    "stream": False,
                     "options": {
                         "temperature": 0.7,
                         "top_p": 0.9,
-                        "num_predict": 1024,
-                        "num_ctx": 2048,
+                        "num_predict": 512,
+                        "num_ctx": 1024,
                     }
                 }).encode(),
                 headers={"Content-Type": "application/json"}
             )
 
-            token_count  = 0
-            response_text = ""
-            in_think      = False
-            pending       = ""
-            think_buf     = ""
-            answer_buf    = ""
+            with urllib.request.urlopen(req, timeout=180) as resp:
+                result = json.loads(resp.read())
 
-            with urllib.request.urlopen(req, timeout=300) as resp:
-                for raw_line in resp:
-                    if not self._running:
-                        break
-                    try:
-                        data = json.loads(raw_line)
-                        content = data.get("message", {}).get("content", "")
-                        if not content:
-                            continue
+            full_content = result.get("message", {}).get("content", "")
+            if not full_content:
+                self.finished_signal.emit(False, "模型未返回回答内容，请重试")
+                return
 
-                        pending += content
-                        while pending:
-                            if not in_think:
-                                idx = pending.find("<think>")
-                                if idx >= 0:
-                                    # 标签前的文本 → 回答
-                                    before = pending[:idx]
-                                    answer_buf += before
-                                    if answer_buf.strip():
-                                        response_text += answer_buf
-                                        self.response_ready.emit(answer_buf)
-                                        token_count += 1
-                                        self.token_count.emit(token_count)
-                                        answer_buf = ""
-                                    pending = pending[idx + 7:]
-                                    in_think = True
-                                else:
-                                    # 没有完整标签，保留最后 6 字符防止标签跨 chunk
-                                    if len(pending) > 6:
-                                        chunk = pending[:-6]
-                                        pending = pending[-6:]
-                                        answer_buf += chunk
-                                    break
-                            else:
-                                idx = pending.find("</think>")
-                                if idx >= 0:
-                                    think_buf += pending[:idx]
-                                    if think_buf.strip():
-                                        self.thinking_ready.emit(think_buf)
-                                    pending = pending[idx + 8:]
-                                    in_think = False
-                                    think_buf = ""
-                                else:
-                                    if len(pending) > 8:
-                                        chunk = pending[:-8]
-                                        pending = pending[-8:]
-                                        think_buf += chunk
-                                    break
+            # 解析 <think> 思考标签
+            import re
+            think_match = re.search(r'<think>(.*?)</think>', full_content, re.DOTALL)
+            if think_match:
+                think = think_match.group(1).strip()
+                if think:
+                    self.thinking_ready.emit(think)
 
-                        # flush
-                        if answer_buf and not in_think:
-                            response_text += answer_buf
-                            self.response_ready.emit(answer_buf)
-                            token_count += 1
-                            self.token_count.emit(token_count)
-                            answer_buf = ""
+            # 移除 <think> 标签，得到纯回答
+            answer = re.sub(r'<think>.*?</think>', '', full_content, flags=re.DOTALL).strip()
 
-                    except json.JSONDecodeError:
-                        continue
-
-            if response_text.strip():
+            if answer:
+                response_text = answer
+                self.response_ready.emit(answer)
+                token_count = max(1, len(answer) // 2)
+                self.token_count.emit(token_count)
                 self.finished_signal.emit(True, "")
             else:
                 self.finished_signal.emit(False, "模型未返回回答内容，请重试")
