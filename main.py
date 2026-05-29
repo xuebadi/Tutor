@@ -2,6 +2,9 @@
 学霸帝 AI - macOS 本地导师应用
 基于 PyQt5 + Ollama Qwen3.5-2B 本地模型
 """
+import os
+os.environ["PYQT5_NO_ABORT"] = "1"
+
 import sys
 import json
 import threading
@@ -65,26 +68,25 @@ class OllamaStreamThread(QThread):
                 self.finished_signal.emit(False, f"❌ 模型 '{self.model}' 未找到。请先在终端运行：ollama create xueba-di")
                 return
 
-            # 发送请求
+            # 使用 /api/chat（Ollama 自动处理 Qwen 模板）
             req = urllib.request.Request(
-                f"{OLLAMA_API}/api/generate",
+                f"{OLLAMA_API}/api/chat",
                 data=json.dumps({
                     "model": self.model,
-                    "prompt": self.prompt,
+                    "messages": [{"role": "user", "content": self.prompt}],
                     "stream": True,
                     "options": {
                         "temperature": 0.7,
                         "top_p": 0.9,
-                        "num_predict": 512,
+                        "num_predict": 256,
+                        "num_ctx": 1024,
                     }
                 }).encode(),
                 headers={"Content-Type": "application/json"}
             )
 
-            buffer = ""
             token_count = 0
-            thinking_mode = False
-            thinking_text = ""
+            response_text = ""
 
             with urllib.request.urlopen(req, timeout=300) as resp:
                 for line in resp:
@@ -92,39 +94,22 @@ class OllamaStreamThread(QThread):
                         break
                     try:
                         data = json.loads(line)
-                        token = data.get("response", "")
-                        buffer += token
-                        token_count += 1
-
-                        # 检测思考模式
-                        if "<think>" in buffer:
-                            thinking_mode = True
-                            before_think = buffer.split("<think>")[0]
-                            if before_think:
-                                self.response_ready.emit(before_think)
-                                buffer = "<think>" + buffer.split("<think>")[1]
-                        elif "</think>" in buffer and thinking_mode:
-                            thinking_mode = False
-                            thinking_content = buffer.split("</think>")[0].replace("<think>", "")
-                            self.thinking_ready.emit(thinking_content)
-                            buffer = buffer.split("</think>")[1]
-
-                        if not thinking_mode:
-                            self.response_ready.emit(token)
-                        else:
-                            # 更新思考内容
-                            current_think = buffer.replace("<think>", "").replace("</think>", "")
-                            self.thinking_ready.emit(current_think)
-
-                        self.token_count.emit(token_count)
-
+                        content = data.get("message", {}).get("content", "")
+                        if content:
+                            response_text += content
+                            token_count += 1
+                            self.response_ready.emit(content)
+                            self.token_count.emit(token_count)
                     except json.JSONDecodeError:
                         continue
 
-            self.finished_signal.emit(True, "")
+            if response_text.strip():
+                self.finished_signal.emit(True, "")
+            else:
+                self.finished_signal.emit(False, "模型未返回回答内容，请重试")
 
-        except urllib.error.URLError as e:
-            self.finished_signal.emit(False, f"❌ 连接失败：Ollama 服务未启动\n\n请在终端运行：brew services start ollama\n或者下载 Ollama: https://ollama.ai")
+        except urllib.error.URLError:
+            self.finished_signal.emit(False, "❌ 连接失败：Ollama 服务未启动\n\n请在终端运行：brew services start ollama")
         except Exception as e:
             self.finished_signal.emit(False, f"❌ 错误：{str(e)}")
 
@@ -456,82 +441,65 @@ class MainWindow(QMainWindow):
         self.ollama_thread.start()
 
     def _build_prompt(self, text):
-        return f"""<|im_start|>user
-你叫学霸帝AI，是一位友善、有耐心的AI导师。你的特点是：
-1. 回答清晰有条理，善于用例子解释
-2. 鼓励用户思考，引导而非直接给答案
-3. 回答简洁但完整，避免冗长
-4. 遇到不懂的问题会坦诚说明
-
-用户问题：{text}
-<|im_end|>
-<|im_start|>assistant"""
+        # /api/chat 会自动处理 prompt 格式，直接返回用户原文
+        return text
 
     def _on_response(self, text):
-        if text == "":
-            return
-        self.ai_buffer += text
-        if self.current_ai_bubble:
-            # 实时显示：只显示 </think> 之后的内容（即正式回答）
-            display = self._strip_think(self.ai_buffer)
-            self.current_ai_bubble.update_text(display)
+        try:
+            if not text:
+                return
+            self.ai_buffer += text
+            if self.current_ai_bubble:
+                self.current_ai_bubble.update_text(self.ai_buffer)
+        except Exception as e:
+            print(f"[_on_response ERROR] {e}", file=sys.stderr)
 
     def _on_thinking(self, text):
-        if not text.strip():
-            return
-        self.thinking_buffer = text
-        if self.current_thinking_bubble:
-            self.current_thinking_bubble.show()
-            self.current_thinking_bubble.update_text(text)
-        self.scroll_to_bottom()
-
-    def _strip_think(self, text):
-        """移除 <think>...</think> 标签，只返回正式回答"""
-        result = []
-        i = 0
-        while i < len(text):
-            start = text.find("<think>", i)
-            if start == -1:
-                result.append(text[i:])
-                break
-            result.append(text[i:start])
-            end = text.find("</think>", start)
-            if end == -1:
-                # 思考未结束，跳过 <think> 内容
-                break
-            i = end + len("</think>")
-        return "".join(result).strip()
+        try:
+            if not text.strip():
+                return
+            self.thinking_buffer = text
+            if self.current_thinking_bubble:
+                self.current_thinking_bubble.show()
+                self.current_thinking_bubble.update_text(text)
+            self.scroll_to_bottom()
+        except Exception as e:
+            print(f"[_on_thinking ERROR] {e}", file=sys.stderr)
 
     def _on_token(self, count):
-        self.status_bar.showMessage(f"🤔 AI 思考中... ({count} tokens)")
+        try:
+            self.status_bar.showMessage(f"🤔 AI 思考中... ({count} tokens)")
+        except Exception:
+            pass
 
     def _on_finished(self, success, error_msg):
-        self.input_box.setEnabled(True)
-        self.send_btn.setEnabled(True)
+        try:
+            self.input_box.setEnabled(True)
+            self.send_btn.setEnabled(True)
 
-        if not success:
-            # 移除失败的占位
-            if self.current_ai_bubble:
-                self.current_ai_bubble.setParent(None)
-            if self.current_thinking_bubble:
-                self.current_thinking_bubble.setParent(None)
-            self.add_message(error_msg, is_user=False)
-            self.status_bar.showMessage("❌ 推理失败")
-        else:
-            # 最终显示（移除思考标签）
-            final = self._strip_think(self.ai_buffer)
-            if not final:
-                final = "(模型未返回回答内容，请重试)"
+            if not success:
+                if self.current_ai_bubble:
+                    self.current_ai_bubble.setParent(None)
+                if self.current_thinking_bubble:
+                    self.current_thinking_bubble.setParent(None)
+                self.add_message(error_msg, is_user=False)
+                self.status_bar.showMessage("❌ 推理失败")
+            else:
+                final = self.ai_buffer.strip()
+                if not final:
+                    final = "(模型未返回回答内容，请重试)"
+                if self.current_ai_bubble:
+                    self.current_ai_bubble.update_text(final)
+                if self.current_thinking_bubble:
+                    self.current_thinking_bubble.hide()
+                self.status_bar.showMessage("✅ 回答完成")
 
-            if self.current_ai_bubble:
-                self.current_ai_bubble.update_text(final)
-            if self.current_thinking_bubble:
-                self.current_thinking_bubble.hide()
-            self.status_bar.showMessage("✅ 回答完成")
-
-        self.scroll_to_bottom()
-        self.current_ai_bubble = None
-        self.current_thinking_bubble = None
+            self.scroll_to_bottom()
+        except Exception as e:
+            print(f"[_on_finished ERROR] {e}", file=sys.stderr)
+        finally:
+            self.current_ai_bubble = None
+            self.current_thinking_bubble = None
 
     def add_message(self, text, is_user=False):
         bubble = MessageBubble(text, is_user=is_user)
