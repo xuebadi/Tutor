@@ -10,13 +10,13 @@ ENV/
 
 # macOS
 .DS_Store
-*.icns
-assets/
+# *.icns  ← 注释掉，保留 assets/AppIcon.icns
+# assets/  ← 注释掉，保留图标文件
 
 # Build artifacts
 build/
 dist/
-*.spec
+# *.spec   ← 注释掉，需要上传 spec 文件
 *.egg-info/
 *.egg
 

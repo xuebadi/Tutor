@@ -1,108 +1,76 @@
-# Tutor 🎓
+# 学霸帝 AI 🎓
 
-**学霸帝 AI** — 本地运行的 AI 导师桌面应用，保护隐私，无需联网。
-
-基于 **PyQt5 + Ollama + Qwen3.5-2B** 构建，支持 macOS（Intel / Apple Silicon）。
-
----
+本地运行的 AI 导师桌面应用，基于 **Qwen3.5-2B** + **Ollama**，无需联网，保护隐私。
 
 ## ✨ 功能特性
 
-- 🔒 **100% 本地运行** — 数据不出本机，保护隐私
-- 🧠 **Qwen3.5-2B** — 轻量级高性能本地 LLM
-- 💬 **流式响应** — 实时显示 AI 思考过程
-- 🎨 **深色主题 UI** — 护眼设计，消息气泡式对话
-- 🔄 **思考模式** — 展示 AI 推理过程（`<think>` 标签）
-- 📦 **DMG 一键安装** — 打包为 macOS 原生应用
+- 💬 **本地 AI 对话** — 基于 Ollama，完全离线运行
+- 📚 **RAG 知识库** — 上传 PDF/Markdown/文本文档，AI 自动参考回答
+- 📖 **引导式学习路径** — 粘贴学习材料，AI 自动生成知识点大纲和分步讲解
+- 🤔 **思考过程可见** — 支持 Qwen `` 标签，展示推理过程
+- 🖥️ **原生 macOS 应用** — PyQt5 构建，DMG 一键安装
 
----
-
-## 📦 安装
+## 🚀 快速开始
 
 ### 1. 安装 Ollama
-
 ```bash
 brew install ollama
 brew services start ollama
 ```
 
 ### 2. 下载模型
-
 ```bash
-# 方式一：从 Ollama 库拉取（推荐）
-ollama pull qwen3.5:2b
-
-# 方式二：导入自定义 GGUF
+# 主模型（对话）
 ollama create xueba-di -f Modelfile
+# 或从 Ollama 库拉取
+ollama pull qwen3:2b
+
+# Embedding 模型（知识库需要）
+ollama pull nomic-embed-text
 ```
 
 ### 3. 下载应用
+前往 [Releases](https://github.com/xuebadi/Tutor/releases) 下载最新 DMG，拖入 Applications 即可。
 
-从 [Releases](https://github.com/xuebadi/Tutor/releases) 页面下载 `学霸帝AI.dmg`，双击安装。
+### 4. 启动
+打开「学霸帝 AI」，输入问题开始对话！
 
----
+## 📚 使用知识库
 
-## 🛠 从源码构建
+1. 点击工具栏「📚 知识库」显示侧边栏
+2. 点击「📄 上传文档」选择 PDF/MD/TXT 文件
+3. 等待索引完成（首次约 10-30 秒）
+4. 正常提问，AI 会自动引用知识库内容回答
 
-### 依赖
+## 📖 使用引导式学习
+
+1. 点击工具栏「📖 学习路径」
+2. 粘贴学习材料全文
+3. 点击「✨ 生成学习大纲」
+4. 点击大纲节点，逐步学习！
+
+## 🛠️ 从源码构建
 
 ```bash
-pip3 install PyQt5 pyinstaller
-brew install ollama
-```
-
-### 运行
-
-```bash
+git clone https://github.com/xuebadi/Tutor.git
+cd Tutor
+pip3 install PyQt5 faiss-cpu PyMuPDF sentence-transformers
 python3 main.py
 ```
 
-### 打包 DMG
-
+打包 DMG：
 ```bash
-# 使用 PyInstaller
-pyinstaller pyinstaller.spec
-
-# 创建 DMG
-hdiutil create -volname "学霸帝AI" \
-  -srcfolder dist/学霸帝AI.app \
-  -ov -format UDZO dist/学霸帝AI.dmg
+pip3 install pyinstaller
+pyinstaller 学霸帝AI_v110.spec
+hdiutil create -volname "学霸帝AI" -srcfolder dist/学霸帝AI.app -ov -format UDZO dist/学霸帝AI.dmg
 ```
 
----
+## 📋 系统要求
 
-## 🚀 使用
+- macOS 10.15+
+- Ollama 0.20+
+- 建议 8GB+ 内存
 
-1. 启动 Ollama 服务：`brew services start ollama`
-2. 打开「学霸帝 AI」应用
-3. 底部输入框输入问题，按 Enter 发送
-4. 查看 AI 实时思考过程和最终回答
-
----
-
-## 📁 项目结构
-
-```
-Tutor/
-├── main.py              # 主程序（PyQt5 GUI + Ollama API）
-├── pyinstaller.spec     # PyInstaller 打包配置
-├── assets/              # 图标等资源
-└── xueba_di_ai_plan.md # 技术方案文档
-```
-
----
-
-## ⚠️ 已知问题
-
-- **Intel Mac 推理速度慢** — CPU 推理约 20-40 秒/回答，建议 Apple Silicon Mac
-- **模型需手动导入** — 首次使用需自行下载 Qwen3.5-2B 模型
-
----
-
-## 📄 许可
+## 📄 许可证
 
 MIT License
-
----
-
-**作者**: [@xuebadi](https://github.com/xuebadi)
